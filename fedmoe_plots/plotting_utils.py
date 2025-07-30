@@ -54,10 +54,71 @@ def configure_logging_for_jupyter(
     )
 
 
+def _select_style(
+    *,
+    custom_fonts: bool = True,
+    use_inverted_style: bool = False,
+    backend: str = "pgf",
+) -> None:
+    """Select the matplotlib style for FedMoE project figures.
+
+    Parameters
+    ----------
+    custom_fonts : bool
+        Whether to use custom fonts in the matplotlib style. Default is True.
+    use_inverted_style : bool
+        Whether to use the inverted style for the matplotlib figures. Default is False.
+    backend : str, optional
+        The matplotlib backend to use. Default is "pgf".
+
+    Raises
+    ------
+    FileNotFoundError
+        If the branding styles directory cannot be found.
+
+    """
+    # Get the directory where to find the styles
+    # Try different methods to find the branding styles directory
+    possible_paths = [
+        Path.cwd().parent.parent.parent
+        / "branding"
+        / "matplotlib_styles",  # Original Jupyter method
+        Path(__file__).parent.parent.parent.parent
+        / "branding"
+        / "matplotlib_styles",  # From module location
+    ]
+
+    styles_path = None
+    for path in possible_paths:
+        if path.exists():
+            styles_path = path
+            break
+
+    if styles_path is None:
+        msg = f"Could not find branding styles directory. Tried: {possible_paths}"
+        raise FileNotFoundError(msg)
+    # Get style paths
+    camlsys_conf_style_path = (
+        styles_path / "camlsys_matplotlib_style_conference.mplstyle"
+    )
+    camlsys_style_path = styles_path / "camlsys_matplotlib_style.mplstyle"
+    camlsys_inv_style_path = styles_path / "camlsys_matplotlib_style_inv.mplstyle"
+
+    # Load style sheet
+    mpl.use(backend)
+    if custom_fonts:
+        if use_inverted_style:
+            plt.style.use(camlsys_inv_style_path)
+        plt.style.use(camlsys_style_path)
+    else:
+        plt.style.use(camlsys_conf_style_path)
+
+
 def run_matplotlib_preamble(
     *,
     custom_fonts: bool = True,
     use_inverted_style: bool = False,
+    backend: str = "pgf",
 ) -> tuple[list[str], list[tuple], list[str]]:
     """Run the matplotlib preamble for FedMoE project figures.
 
@@ -67,6 +128,8 @@ def run_matplotlib_preamble(
         Whether to use custom fonts in the matplotlib style. Default is True.
     use_inverted_style : bool
         Whether to use the inverted style for the matplotlib figures. Default is False.
+    backend : str, optional
+        The matplotlib backend to use. Default is "pgf".
 
     Returns
     -------
@@ -83,23 +146,55 @@ def run_matplotlib_preamble(
     >>> configure_logging_for_jupyter(logging.INFO)
 
     """
-    # Get the directory where to find the styles
-    styles_path = Path.cwd().parent.parent.parent / "branding" / "matplotlib_styles"
-    # Get style paths
-    camlsys_conf_style_path = (
-        styles_path / "camlsys_matplotlib_style_conference.mplstyle"
+    _select_style(
+        custom_fonts=custom_fonts,
+        use_inverted_style=use_inverted_style,
+        backend=backend,
     )
-    camlsys_style_path = styles_path / "camlsys_matplotlib_style.mplstyle"
-    camlsys_inv_style_path = styles_path / "camlsys_matplotlib_style_inv.mplstyle"
 
-    # Load style sheet
-    mpl.use("pgf")
-    if custom_fonts:
-        if use_inverted_style:
-            plt.style.use(camlsys_inv_style_path)
-        plt.style.use(camlsys_style_path)
-    else:
-        plt.style.use(camlsys_conf_style_path)
+    # Fix font configuration to avoid LaTeX warnings
+    # Provide fallback fonts that are LaTeX-compatible
+    if mpl.rcParams.get("text.usetex", False):
+        if custom_fonts:
+            # When using custom fonts, preserve them and add LaTeX fallbacks
+            current_serif_fonts = mpl.rcParams.get("font.serif", [])
+            if isinstance(current_serif_fonts, str):
+                current_serif_fonts = [current_serif_fonts]
+
+            # Add LaTeX-compatible fallbacks only if not already there
+            latex_fallbacks = [
+                "Computer Modern Roman",  # Default LaTeX font
+                "Times",
+                "Times New Roman",
+                "DejaVu Serif",
+                "serif",  # Generic fallback
+            ]
+
+            # Combine custom fonts with fallbacks, removing duplicates
+            combined_fonts = []
+            for font in current_serif_fonts + latex_fallbacks:
+                if font not in combined_fonts:
+                    combined_fonts.append(font)
+
+            mpl.rcParams["font.serif"] = combined_fonts
+            log.info(
+                "Preserved custom fonts with LaTeX fallbacks: %s...",
+                combined_fonts[:3],
+            )
+        else:
+            # For non-custom fonts, use only LaTeX-compatible fonts
+            mpl.rcParams["font.serif"] = [
+                "Computer Modern Roman",  # Default LaTeX font
+                "Times",
+                "Times New Roman",
+                "DejaVu Serif",
+                "serif",  # Generic fallback
+            ]
+            log.info("Configured LaTeX-compatible fonts with fallbacks")
+
+        # Ensure font family is properly set
+        if "serif" not in mpl.rcParams["font.family"]:
+            mpl.rcParams["font.family"] = ["serif"]
 
     # Colors
     color_palette = plt.rcParams["axes.prop_cycle"].by_key()["color"]
@@ -121,7 +216,7 @@ def run_matplotlib_preamble(
         (0, (3, 1, 1, 1, 1, 1)),  # Densely dashdotdotted
     ]
     # Patterns for bar plots
-    patterns = ["|", "\\", "/", "+", "-", ".", "*", "x", "o", "O"]
+    patterns = ["|", "", "/", "+", "-", ".", "*", "x", "o", "O"]
     mplstyle.use("fast")
     return color_palette, line_styles, patterns
 
@@ -202,7 +297,8 @@ def bold_all_ticks(
     """
     x_ticks_values, _ticks_labels = plt.xticks()
     assert isinstance(
-        x_ticks_values, np.ndarray,
+        x_ticks_values,
+        np.ndarray,
     ), f"Expected x_ticks_values to be a numpy array, got {type(x_ticks_values)}"
     plt.xticks(
         x_ticks_values,
@@ -210,7 +306,8 @@ def bold_all_ticks(
     )
     y_ticks_values, _ticks_labels = plt.yticks()
     assert isinstance(
-        y_ticks_values, np.ndarray,
+        y_ticks_values,
+        np.ndarray,
     ), f"Expected y_ticks_values to be a numpy array, got {type(y_ticks_values)}"
     plt.yticks(y_ticks_values, [format_fn(y) for y in y_ticks_values])
 
