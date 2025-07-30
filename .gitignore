@@ -1,0 +1,5 @@
+# Exclude Python cache files
+**__pycache__**
+
+# Exclude tests
+fedmoe_plots/tests/**

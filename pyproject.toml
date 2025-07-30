@@ -1,0 +1,158 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "fedmoe_plots"
+dynamic = ["classifiers"]
+version = "0.0.1"
+readme = "README.md"
+description = "Plotting utilities for FedMoE experiments"
+license = "Apache-2.0"
+authors = [
+    { name = "Lorenzo Sani", email = "ls985@cam.ac.uk" },
+]
+requires-python = "<3.13,>=3.10"
+dependencies = [
+    "ipykernel>=6.30.0",
+    "ipython>=8.37.0",
+    "ipywidgets>=8.1.7",
+    "jupyter-server>=2.16.0",
+    "latex>=0.7.0",
+    "matplotlib>=3.10.3",
+    "numpy>=2.2.6",
+    "pandas>=2.3.1",
+    "seaborn>=0.13.2",
+    "wandb>=0.21.0",
+]
+
+[tool.hatch.metadata]
+allow-direct-references = true # allow direct references to git repos in dependencies
+
+[tool.isort]
+line_length = 88
+indent = "    "
+multi_line_output = 3
+include_trailing_comma = true
+force_grid_wrap = 0
+use_parentheses = true
+
+[tool.black]
+line-length = 88
+preview = true
+target-version = ["py312"]
+
+[tool.pytest.ini_options]
+minversion = "6.2"
+addopts = "-qq"
+
+[tool.mypy]
+ignore_missing_imports = true
+show_error_codes = true
+strict = false
+plugins = "numpy.typing.mypy_plugin"
+exclude = ["nano"]
+
+[tool.pylint."MESSAGES CONTROL"]
+disable = "bad-continuation,duplicate-code,too-few-public-methods,useless-import-alias,import-error,no-member,no-name-in-module"
+good-names = "f,i,j,k,_,x,y,X,Y"
+signature-mutators="hydra.main.main"
+
+[[tool.mypy.overrides]]
+module = [
+    "importlib.metadata.*",
+    "importlib_metadata.*",
+]
+follow_imports = "skip"
+follow_imports_for_stubs = true
+disallow_untyped_calls = false
+
+[tool.pyright]
+exclude = [
+    "fedmoe_plots/tests/*",
+]
+stubPath = ""
+reportMissingTypeStubs = "none"
+reportUnusedClass = "warning"
+reportUnusedFunction = "warning"
+reportUnusedImport = "error"
+reportUnusedVariable = "error"
+reportDuplicateImport = "error"
+reportWildcardImportFromLibrary = "error"
+reportUntypedFunctionDecorator = "error"
+reportUndefinedVariable = "error"
+strictParameterNoneValue = true
+reportPropertyTypeMismatch = "error"
+reportUntypedNamedTuple = "error"
+reportUnnecessaryCast = "error"
+reportInvalidTypeVarUse = "error"
+reportOverlappingOverload = "error"
+reportUninitializedInstanceVariable = "error"
+reportInvalidStringEscapeSequence = "error"
+reportMissingParameterType = "error"
+reportCallInDefaultInitializer = "error"
+reportUnnecessaryComparison = "error"
+reportSelfClsParameterName = "error"
+reportImplicitStringConcatenation = "none"
+reportInvalidStubStatement = "error"
+reportIncompleteStub = "error"
+reportUnsupportedDunderAll = "error"
+reportUnusedCoroutine = "error"
+reportMissingImports = "error"
+
+[tool.docformatter]
+wrap-summaries = 88
+wrap-descriptions = 88
+
+[tool.yamlfix]
+allow_duplicate_keys = false
+line_length = 88
+none_representation = "null"
+whitelines = 1
+section_whitelines = 1
+exclude = [
+]
+
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+preview = true
+lint.select = ["ALL"]
+lint.fixable = ["ALL"]
+lint.ignore = ["TD003", "FIX002", "CPY001", "S101"]
+exclude = [
+]
+
+[tool.ruff.format]
+preview = true
+
+[tool.vulture]
+ignore_decorators = ["@typed_field_validator"]
+ignore_names = [
+]
+paths = ["fedmoe_plots/"]
+sort_by_size = true
+exclude = []
+
+[dependency-groups]
+dev = [
+    "isort<6.0.0,>=5.13.2",
+    "black[jupyter]<25.0.0,>=24.10.0",
+    "docformatter<2.0.0,>=1.7.5",
+    "mypy>=1.11.0",
+    "pylint>=3.3.1",
+    "flake8==7.1.1",
+    "pytest-watch==4.2.0",
+    "ruff>=0.9.6",
+    "yamlfix>=1.16.0",
+    "pre-commit>=3.8.0",
+    "pytest<9,>=7.2.1",
+    "pytest-codeblocks<0.18,>=0.16.1",
+    "pytest-cov<7,>=4",
+    "pyright>=1.1.403",
+    "vulture>=2.3",
+    "toml<0.11,>=0.10.2",
+    "packaging<25,>=21",
+    "hf-transfer==0.1.9",
+]
