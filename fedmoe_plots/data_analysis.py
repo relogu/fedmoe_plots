@@ -151,6 +151,10 @@ def get_device_throughput_series(
         metric_name=DEVICE_THROUGHPUT_TOKENS,
         moving_window=moving_window,
     )
+    # exclude NaN values
+    valid_mask = ~tokens.isna()
+    steps = steps[valid_mask]
+    tokens = tokens[valid_mask]
 
     return steps, tokens
 
