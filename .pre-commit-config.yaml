@@ -11,7 +11,7 @@ repos:
     hooks:
       - id: ruff
         types_or: [python, pyi, jupyter]
-        args: [--fix, --target-version=py312, --preview, --line-length=88, --select=ALL, --fixable=ALL, --exclude=outputs/, --extend-ignore=TD003, --extend-ignore=FIX002, --extend-ignore=CPY001, --extend-ignore=S101, --exclude=dev/, --exclude=checkpoints/, --exclude=notebooks/, --exclude=run_scripts/, --exclude=scripts/, --exclude=multirun/, --exclude=wandb/, --exclude=data/
+        args: [--fix, --target-version=py312, --preview, --line-length=88, --select=ALL, --fixable=ALL, --exclude=outputs/, --extend-ignore=TD003, --extend-ignore=FIX002, --extend-ignore=CPY001, --extend-ignore=S101, --extend-ignore=PLR2004, --exclude=dev/, --exclude=checkpoints/, --exclude=notebooks/, --exclude=run_scripts/, --exclude=scripts/, --exclude=multirun/, --exclude=wandb/, --exclude=data/
         ]
   - repo: https://github.com/lyz-code/yamlfix/
     rev: 1.17.0
@@ -87,10 +87,6 @@ repos:
         pass_filenames: false
         args: [--warnings]
         additional_dependencies: ["pyright@1.1.403"]  
-  - repo: https://github.com/jendrikseipp/vulture
-    rev: 'v2.3'  # or any later Vulture version
-    hooks:
-      - id: vulture
   
       
 

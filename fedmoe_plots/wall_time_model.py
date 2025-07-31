@@ -1,6 +1,9 @@
 """Estimate total wall-clock training time for LLM training."""
 
-from dataclasses import dataclass
+from __future__ import annotations
+
+from dataclasses import dataclass, replace
+from typing import Any
 
 
 @dataclass
@@ -117,9 +120,8 @@ class ExperimentWallTime:
         # The formula used here is 2 * d / B_params * (1 - 1/M) which is equivalent.
         # It represents the time for all workers to exchange their parameters.
         communication_time = (
-            (2 * self.n_model_parameters / p2p_bandwidth_params_per_sec)
-            * (1 - 1 / self.n_workers)
-        )
+            2 * self.n_model_parameters / p2p_bandwidth_params_per_sec
+        ) * (1 - 1 / self.n_workers)
 
         # Add latency
         return communication_time + self.p2p_network_latency
@@ -160,7 +162,29 @@ class ExperimentWallTime:
         # Total wall-clock time includes compute time, non-overlappable communication,
         # and the part of overlappable communication that couldn't be hidden.
         return (
-            compute_time_val
-            + non_overlappable_comm_time
-            + unhidden_overlappable_time
+            compute_time_val + non_overlappable_comm_time + unhidden_overlappable_time
         )
+
+    def copy(self, **kwargs: Any) -> ExperimentWallTime:  # noqa: ANN401
+        """Create a copy of this instance with updated parameters.
+
+        This method allows for creating a new instance of ExperimentWallTime
+        with the same parameters as the current instance, but allows for
+        overriding specific parameters using keyword arguments.
+
+        Parameters
+        ----------
+        **kwargs : Any
+            Keyword arguments to override specific parameters of the instance.
+            If a parameter is not provided, the current value will be used.
+            Only accepts valid field names with compatible types.
+
+        Returns
+        -------
+        ExperimentWallTime
+            A new instance of ExperimentWallTime with the updated parameters.
+
+        """
+        # Use dataclass replace for a cleaner, more maintainable approach
+        # This automatically handles all fields and provides better type safety
+        return replace(self, **kwargs)

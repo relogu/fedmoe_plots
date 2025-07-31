@@ -50,7 +50,6 @@ addopts = "-qq"
 ignore_missing_imports = true
 show_error_codes = true
 strict = false
-plugins = "numpy.typing.mypy_plugin"
 exclude = ["nano"]
 
 [tool.pylint."MESSAGES CONTROL"]
@@ -69,6 +68,7 @@ disallow_untyped_calls = false
 
 [tool.pyright]
 exclude = [
+    ".venv/*",
     "fedmoe_plots/tests/*",
 ]
 stubPath = ""
@@ -120,20 +120,12 @@ line-length = 88
 preview = true
 lint.select = ["ALL"]
 lint.fixable = ["ALL"]
-lint.ignore = ["TD003", "FIX002", "CPY001", "S101"]
+lint.ignore = ["TD003", "FIX002", "CPY001", "S101", "PLR2004"]
 exclude = [
 ]
 
 [tool.ruff.format]
 preview = true
-
-[tool.vulture]
-ignore_decorators = ["@typed_field_validator"]
-ignore_names = [
-]
-paths = ["fedmoe_plots/"]
-sort_by_size = true
-exclude = []
 
 [dependency-groups]
 dev = [
@@ -151,7 +143,6 @@ dev = [
     "pytest-codeblocks<0.18,>=0.16.1",
     "pytest-cov<7,>=4",
     "pyright>=1.1.403",
-    "vulture>=2.3",
     "toml<0.11,>=0.10.2",
     "packaging<25,>=21",
     "hf-transfer==0.1.9",

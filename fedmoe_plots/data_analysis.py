@@ -86,9 +86,12 @@ def get_smoothed_series(
     perplexity_series = aggregated_df[metric_name]
 
     # Smooth the perplexity series
-    smoothed_perplexity = perplexity_series.rolling(window=moving_window).mean()
+    smoothed_perplexity = perplexity_series.rolling(
+        window=moving_window,
+    ).mean()
 
-    return steps, smoothed_perplexity
+    # NOTE: PyRight has issues with understanding the types here
+    return steps, smoothed_perplexity  # pyright: ignore[reportReturnType]
 
 
 def get_global_token_series(
@@ -153,10 +156,11 @@ def get_device_throughput_series(
     )
     # exclude NaN values
     valid_mask = ~tokens.isna()
-    steps = steps[valid_mask]
-    tokens = tokens[valid_mask]
+    # NOTE: PyRight has issues with understanding the types here
+    steps_filtered: pd.Series = steps[valid_mask]  # pyright: ignore[reportAssignmentType]
+    tokens_filtered: pd.Series = tokens[valid_mask]  # pyright: ignore[reportAssignmentType]
 
-    return steps, tokens
+    return steps_filtered, tokens_filtered
 
 
 def get_perplexity_versus_tokens(

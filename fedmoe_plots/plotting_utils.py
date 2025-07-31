@@ -59,6 +59,7 @@ def _select_style(
     custom_fonts: bool = True,
     use_inverted_style: bool = False,
     backend: str = "pgf",
+    disable_latex: bool = False,
 ) -> None:
     """Select the matplotlib style for FedMoE project figures.
 
@@ -70,6 +71,9 @@ def _select_style(
         Whether to use the inverted style for the matplotlib figures. Default is False.
     backend : str, optional
         The matplotlib backend to use. Default is "pgf".
+    disable_latex : bool
+        Whether to disable LaTeX rendering and use Montserrat without LaTeX. Default is
+        False.
 
     Raises
     ------
@@ -80,12 +84,8 @@ def _select_style(
     # Get the directory where to find the styles
     # Try different methods to find the branding styles directory
     possible_paths = [
-        Path.cwd().parent.parent.parent
-        / "branding"
-        / "matplotlib_styles",  # Original Jupyter method
-        Path(__file__).parent.parent.parent.parent
-        / "branding"
-        / "matplotlib_styles",  # From module location
+        Path(__file__).parent / "notebooks",  # Local notebooks directory
+        Path.cwd() / "fedmoe_plots" / "notebooks",  # Current working directory
     ]
 
     styles_path = None
@@ -103,13 +103,19 @@ def _select_style(
     )
     camlsys_style_path = styles_path / "camlsys_matplotlib_style.mplstyle"
     camlsys_inv_style_path = styles_path / "camlsys_matplotlib_style_inv.mplstyle"
+    camlsys_no_latex_style_path = (
+        styles_path / "camlsys_matplotlib_style_montserrat_no_latex.mplstyle"
+    )
 
     # Load style sheet
     mpl.use(backend)
     if custom_fonts:
-        if use_inverted_style:
+        if disable_latex:
+            plt.style.use(camlsys_no_latex_style_path)
+        elif use_inverted_style:
             plt.style.use(camlsys_inv_style_path)
-        plt.style.use(camlsys_style_path)
+        else:
+            plt.style.use(camlsys_style_path)
     else:
         plt.style.use(camlsys_conf_style_path)
 
@@ -119,6 +125,7 @@ def run_matplotlib_preamble(
     custom_fonts: bool = True,
     use_inverted_style: bool = False,
     backend: str = "pgf",
+    disable_latex: bool = False,
 ) -> tuple[list[str], list[tuple], list[str]]:
     """Run the matplotlib preamble for FedMoE project figures.
 
@@ -130,6 +137,9 @@ def run_matplotlib_preamble(
         Whether to use the inverted style for the matplotlib figures. Default is False.
     backend : str, optional
         The matplotlib backend to use. Default is "pgf".
+    disable_latex : bool
+        Whether to disable LaTeX rendering and use Montserrat without LaTeX.
+        Default is False.
 
     Returns
     -------
@@ -150,6 +160,7 @@ def run_matplotlib_preamble(
         custom_fonts=custom_fonts,
         use_inverted_style=use_inverted_style,
         backend=backend,
+        disable_latex=disable_latex,
     )
 
     # Fix font configuration to avoid LaTeX warnings
@@ -335,3 +346,158 @@ def bold_all_ticks_on_axis(
     )
     y_ticks_values = ax.get_yticks()
     ax.set_yticks(y_ticks_values, [format_fn(y) for y in y_ticks_values])
+
+
+def apply_improved_style() -> None:
+    """Apply improved matplotlib styling for better visual hierarchy.
+
+    This function applies enhancements to the current matplotlib style:
+    - Better grid appearance with dashed lines and reduced opacity
+    - Cleaner axes with no top/right spines
+    - Improved tick styling with larger, more prominent ticks
+    - Enhanced legend appearance with shadows and borders
+    - Better typography hierarchy
+    - Larger default figure size for better readability
+    """
+    mpl.rcParams.update({
+        # Better default figure size for readability
+        "figure.figsize": [8, 6],
+        "figure.dpi": 100,
+
+        # Improved grid appearance
+        "grid.linewidth": 0.5,     # Thinner grid lines
+        "grid.alpha": 0.7,         # More subtle grid
+        "grid.linestyle": "--",    # Dashed instead of solid
+
+        # Better axes styling
+        "axes.linewidth": 1.2,     # Slightly thicker axis lines
+        "axes.spines.top": False,  # Remove top spine for cleaner look
+        "axes.spines.right": False,  # Remove right spine for cleaner look
+        "axes.labelpad": 8,        # More space for labels
+
+        # Improved tick styling
+        "xtick.major.size": 5,     # Larger tick marks
+        "ytick.major.size": 5,
+        "xtick.major.width": 1.2,  # Thicker tick marks
+        "ytick.major.width": 1.2,
+        "xtick.major.pad": 6,      # More padding for tick labels
+        "ytick.major.pad": 6,
+        "xtick.minor.visible": True,  # Show minor ticks
+        "ytick.minor.visible": True,
+        "xtick.minor.size": 3,
+        "ytick.minor.size": 3,
+
+        # Better line widths
+        "lines.linewidth": 2.0,    # Thicker lines for better visibility
+        "lines.markersize": 6,     # Larger markers
+
+        # Improved legend
+        "legend.frameon": True,
+        "legend.framealpha": 0.9,
+        "legend.fancybox": True,
+        "legend.shadow": True,
+        "legend.facecolor": "white",
+        "legend.edgecolor": "gray",
+        "legend.borderpad": 0.5,
+
+        # Better text rendering
+        "font.size": 12,           # Slightly smaller default font
+        "axes.titlesize": 14,      # Larger title
+        "axes.labelsize": 12,      # Consistent label size
+        "xtick.labelsize": 10,     # Smaller tick labels
+        "ytick.labelsize": 10,
+        "legend.fontsize": 10,
+    })
+
+
+def create_publication_ready_plot(
+    figsize: tuple[float, float] = (8, 6),
+    *,
+    use_improved_style: bool = True,
+    enable_grid: bool = True,
+    grid_which: str = "both",
+) -> tuple[Figure, Axes]:
+    """Create a publication-ready plot with improved styling.
+
+    Parameters
+    ----------
+    figsize : tuple[float, float], optional
+        Figure size in inches, by default (8, 6)
+    use_improved_style : bool, optional
+        Whether to apply improved styling, by default True
+    enable_grid : bool, optional
+        Whether to enable grid, by default True
+    grid_which : str, optional
+        Which grid lines to show ('major', 'minor', 'both'), by default "both"
+
+    Returns
+    -------
+    tuple[Figure, Axes]
+        A tuple containing the figure and axes objects
+
+    Examples
+    --------
+    >>> fig, ax = create_publication_ready_plot()
+    >>> ax.plot([1, 2, 3], [1, 4, 2], label='Data')
+    >>> ax.set_xlabel('X Label')
+    >>> ax.set_ylabel('Y Label')
+    >>> ax.set_title('My Plot')
+    >>> ax.legend()
+    >>> plt.tight_layout()
+    >>> plt.show()
+
+    """
+    if use_improved_style:
+        apply_improved_style()
+
+    fig, ax = plt.subplots(figsize=figsize)
+
+    if enable_grid:
+        # Type-safe grid which parameter
+        valid_which = ["major", "minor", "both"]
+        if grid_which in valid_which:
+            ax.grid(which=grid_which, alpha=0.3)  # type: ignore[arg-type]
+        else:
+            ax.grid(which="both", alpha=0.3)
+
+    return fig, ax
+
+
+def enhance_plot_for_presentation(
+    ax: Axes,
+    *,
+    bold_ticks: bool = False,
+    increase_linewidth: float = 1.5,
+    legend_shadow: bool = True,
+) -> None:
+    """Enhance an existing plot for presentation purposes.
+
+    Parameters
+    ----------
+    ax : Axes
+        The matplotlib Axes object to enhance
+    bold_ticks : bool, optional
+        Whether to make tick labels bold, by default False
+    increase_linewidth : float, optional
+        Factor to increase line width by, by default 1.5
+    legend_shadow : bool, optional
+        Whether to add shadow to legend, by default True
+
+    """
+    # Enhance line widths
+    for line in ax.get_lines():
+        current_width = line.get_linewidth()
+        line.set_linewidth(current_width * increase_linewidth)
+
+    # Bold ticks if requested
+    if bold_ticks:
+        bold_all_ticks_on_axis(ax)
+
+    # Enhance legend if present - using proper matplotlib API
+    legend = ax.get_legend()
+    if legend and legend_shadow:
+        # Access the legend frame for styling
+        frame = legend.get_frame()
+        frame.set_facecolor("white")
+        frame.set_edgecolor("gray")
+        frame.set_alpha(0.9)
