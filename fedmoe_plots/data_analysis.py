@@ -9,8 +9,10 @@ log = logging.getLogger(__name__)
 
 STEP_COLUMN = "time/batch"
 TOKEN_COUNT_COLUMN = "time/token"  # noqa: S105
+THROUGHPUT_TOKENS = "throughput/tokens_per_sec"
 DEVICE_THROUGHPUT_TOKENS = "throughput/device/tokens_per_sec"
-TRAIN_PERPLEXITY_COLUMN = "metrics/train/LanguagePerplexity"
+TRAIN_PERPLEXITY = "metrics/train/LanguagePerplexity"
+MICROBATCHSIZE = "trainer/device_train_microbatch_size"
 
 
 class ColumnNotFoundError(Exception):
@@ -31,7 +33,7 @@ class ColumnNotFoundError(Exception):
 
 def get_smoothed_series(
     client_metrics_df: pd.DataFrame,
-    metric_name: str = TRAIN_PERPLEXITY_COLUMN,
+    metric_name: str = TRAIN_PERPLEXITY,
     *,
     moving_window: int = 5,
     linear_interpolation: bool = True,
@@ -44,7 +46,7 @@ def get_smoothed_series(
         The DataFrame containing client metrics.
     metric_name : str, optional
         The name of the metric to extract, by default
-        TRAIN_PERPLEXITY_COLUMN.
+        TRAIN_PERPLEXITY.
     moving_window : int, optional
         The size of the moving window for smoothing, by default 5.
     linear_interpolation : bool, optional
@@ -157,8 +159,52 @@ def get_device_throughput_series(
     # exclude NaN values
     valid_mask = ~tokens.isna()
     # NOTE: PyRight has issues with understanding the types here
-    steps_filtered: pd.Series = steps[valid_mask]  # pyright: ignore[reportAssignmentType]
-    tokens_filtered: pd.Series = tokens[valid_mask]  # pyright: ignore[reportAssignmentType]
+    steps_filtered: pd.Series = steps[
+        valid_mask
+    ]  # pyright: ignore[reportAssignmentType]
+    tokens_filtered: pd.Series = tokens[
+        valid_mask
+    ]  # pyright: ignore[reportAssignmentType]
+
+    return steps_filtered, tokens_filtered
+
+
+def get_throughput_series(
+    client_metrics_df: pd.DataFrame,
+    moving_window: int,
+) -> tuple[pd.Series, pd.Series]:
+    """Get the throughput series from the client metrics DataFrame.
+
+    Parameters
+    ----------
+    client_metrics_df : pd.DataFrame
+        The DataFrame containing client metrics.
+    moving_window : int
+        The size of the moving window for smoothing.
+
+    Returns
+    -------
+    tuple[pd.Series, pd.Series]
+        A tuple containing two pandas Series:
+        - The first Series contains the steps.
+        - The second Series contains the throughput in tokens per second.
+
+    """
+    # Get the original series
+    steps, tokens = get_smoothed_series(
+        client_metrics_df,
+        metric_name=THROUGHPUT_TOKENS,
+        moving_window=moving_window,
+    )
+    # exclude NaN values
+    valid_mask = ~tokens.isna()
+    # NOTE: PyRight has issues with understanding the types here
+    steps_filtered: pd.Series = steps[
+        valid_mask
+    ]  # pyright: ignore[reportAssignmentType]
+    tokens_filtered: pd.Series = tokens[
+        valid_mask
+    ]  # pyright: ignore[reportAssignmentType]
 
     return steps_filtered, tokens_filtered
 
@@ -195,7 +241,7 @@ def get_perplexity_versus_tokens(
     _, tokens = get_global_token_series(client_metrics_df, n_clients_per_round)
     _, perplexity = get_smoothed_series(
         client_metrics_df,
-        metric_name=TRAIN_PERPLEXITY_COLUMN,
+        metric_name=TRAIN_PERPLEXITY,
         moving_window=moving_window,
     )
     # Ensure tokens and perplexity are aligned
@@ -204,3 +250,87 @@ def get_perplexity_versus_tokens(
         raise ValueError(msg)
 
     return tokens, perplexity
+
+
+def get_microbatch_size(
+    client_metrics_df: pd.DataFrame,
+) -> int:
+    """Get the minimum microbatch size from the client metrics DataFrame.
+
+    Parameters
+    ----------
+    client_metrics_df : pd.DataFrame
+        The DataFrame containing client metrics.
+
+    Returns
+    -------
+    int
+        The minimum microbatch size, converted to an integer.
+
+    Raises
+    ------
+    ValueError
+        If the microbatch size series is empty or contains only NaN values.
+
+    """
+    _, mbs_list = get_smoothed_series(
+        client_metrics_df,
+        metric_name=MICROBATCHSIZE,
+        moving_window=1,
+    )
+    # Return the minimum microbatch size not NaN
+    mbs_list = mbs_list.dropna()
+    if mbs_list.empty:
+        msg = "Microbatch size series is empty or contains only NaN values."
+        raise ValueError(msg)
+    return int(mbs_list.min())  # Convert to int for consistency
+
+
+def get_n_gpus(
+    client_metrics_df: pd.DataFrame,
+) -> int:
+    """Get the number of GPUs used in the training from the client metrics DataFrame.
+
+    Parameters
+    ----------
+    client_metrics_df : pd.DataFrame
+        The DataFrame containing client metrics.
+
+    Returns
+    -------
+    int
+        The number of GPUs used, rounded to the nearest integer.
+
+    Raises
+    ------
+    ValueError
+        If the device tokens or total tokens series is empty, or if they do not have the
+        same length, or if the number of GPUs series is empty or contains only NaN
+        values.
+
+    """
+    # Get device and non-device throughput series
+    _steps, device_tokens = get_device_throughput_series(
+        client_metrics_df,
+        moving_window=1,
+    )
+    _steps, tokens = get_throughput_series(
+        client_metrics_df,
+        moving_window=1,
+    )
+    # Divide total tokens by device tokens to get the number of GPUs
+    if device_tokens.empty or tokens.empty:
+        msg = "Device tokens or total tokens series is empty."
+        raise ValueError(msg)
+    if len(device_tokens) != len(tokens):
+        msg = "Device tokens and total tokens series must have the same length."
+        raise ValueError(msg)
+    # Calculate the number of GPUs
+    n_gpus = tokens / device_tokens
+    # Ensure n_gpus is a Series and drop NaN values
+    n_gpus = pd.Series(n_gpus).dropna()
+    if n_gpus.empty:
+        msg = "Number of GPUs series is empty or contains only NaN values."
+        raise ValueError(msg)
+    # Return the closest integer to the mean of n_gpus
+    return int(np.round(n_gpus.mean()))  # Convert to int for consistency
