@@ -1,5 +1,6 @@
 """Utilities for plotting FedMoE project figures."""
 
+import colorsys
 import logging
 import math
 import sys
@@ -11,10 +12,46 @@ import matplotlib.style as mplstyle
 import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
+from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.figure import Figure
 from matplotlib.patches import Rectangle
 
 log = logging.getLogger(__name__)
+
+
+def create_continuous_colormap_for_colors(
+    colors: list[str],
+    name: str = "custom_cmap",
+) -> LinearSegmentedColormap:
+    """Create a continuous colormap from a list of color strings.
+
+    Parameters
+    ----------
+    colors : list[str]
+        A list of color strings (e.g., ["red", "blue", "green"] or
+        ["#FF0000", "#0000FF", "#00FF00"])
+    name : str
+        Name for the colormap
+
+    Returns
+    -------
+    LinearSegmentedColormap
+        A continuous colormap created from the input colors.
+
+    """
+
+    def _get_hsv(hexrgb: str) -> tuple[float, float, float]:
+        # TODO(Lorenzo): Transform to HSV only if needed
+        hexrgb = hexrgb.lstrip("#")  # Remove any leading '#'
+        # Convert hex to RGB
+        r, g, b = (int(hexrgb[i : i + 2], 16) / 255.0 for i in range(0, 6, 2))
+        # Convert RGB to HSV
+        return colorsys.rgb_to_hsv(r, g, b)
+
+    # Sort the list by HSV value
+    colors.sort(key=_get_hsv)
+
+    return LinearSegmentedColormap.from_list(name, colors)
 
 
 def configure_logging_for_jupyter(
@@ -59,7 +96,6 @@ def _select_style(
     custom_fonts: bool = True,
     use_inverted_style: bool = False,
     backend: str = "pgf",
-    disable_latex: bool = False,
 ) -> None:
     """Select the matplotlib style for FedMoE project figures.
 
@@ -71,9 +107,6 @@ def _select_style(
         Whether to use the inverted style for the matplotlib figures. Default is False.
     backend : str, optional
         The matplotlib backend to use. Default is "pgf".
-    disable_latex : bool
-        Whether to disable LaTeX rendering and use Montserrat without LaTeX. Default is
-        False.
 
     Raises
     ------
@@ -103,16 +136,11 @@ def _select_style(
     )
     camlsys_style_path = styles_path / "camlsys_matplotlib_style.mplstyle"
     camlsys_inv_style_path = styles_path / "camlsys_matplotlib_style_inv.mplstyle"
-    camlsys_no_latex_style_path = (
-        styles_path / "camlsys_matplotlib_style_montserrat_no_latex.mplstyle"
-    )
 
     # Load style sheet
     mpl.use(backend)
     if custom_fonts:
-        if disable_latex:
-            plt.style.use(camlsys_no_latex_style_path)
-        elif use_inverted_style:
+        if use_inverted_style:
             plt.style.use(camlsys_inv_style_path)
         else:
             plt.style.use(camlsys_style_path)
@@ -125,7 +153,6 @@ def run_matplotlib_preamble(
     custom_fonts: bool = True,
     use_inverted_style: bool = False,
     backend: str = "pgf",
-    disable_latex: bool = False,
 ) -> tuple[list[str], list[tuple], list[str]]:
     """Run the matplotlib preamble for FedMoE project figures.
 
@@ -137,9 +164,6 @@ def run_matplotlib_preamble(
         Whether to use the inverted style for the matplotlib figures. Default is False.
     backend : str, optional
         The matplotlib backend to use. Default is "pgf".
-    disable_latex : bool
-        Whether to disable LaTeX rendering and use Montserrat without LaTeX.
-        Default is False.
 
     Returns
     -------
@@ -160,7 +184,6 @@ def run_matplotlib_preamble(
         custom_fonts=custom_fonts,
         use_inverted_style=use_inverted_style,
         backend=backend,
-        disable_latex=disable_latex,
     )
 
     # Fix font configuration to avoid LaTeX warnings
@@ -359,55 +382,51 @@ def apply_improved_style() -> None:
     - Better typography hierarchy
     - Larger default figure size for better readability
     """
-    mpl.rcParams.update({
-        # Better default figure size for readability
-        "figure.figsize": [8, 6],
-        "figure.dpi": 100,
-
-        # Improved grid appearance
-        "grid.linewidth": 0.5,     # Thinner grid lines
-        "grid.alpha": 0.7,         # More subtle grid
-        "grid.linestyle": "--",    # Dashed instead of solid
-
-        # Better axes styling
-        "axes.linewidth": 1.2,     # Slightly thicker axis lines
-        "axes.spines.top": False,  # Remove top spine for cleaner look
-        "axes.spines.right": False,  # Remove right spine for cleaner look
-        "axes.labelpad": 8,        # More space for labels
-
-        # Improved tick styling
-        "xtick.major.size": 5,     # Larger tick marks
-        "ytick.major.size": 5,
-        "xtick.major.width": 1.2,  # Thicker tick marks
-        "ytick.major.width": 1.2,
-        "xtick.major.pad": 6,      # More padding for tick labels
-        "ytick.major.pad": 6,
-        "xtick.minor.visible": True,  # Show minor ticks
-        "ytick.minor.visible": True,
-        "xtick.minor.size": 3,
-        "ytick.minor.size": 3,
-
-        # Better line widths
-        "lines.linewidth": 2.0,    # Thicker lines for better visibility
-        "lines.markersize": 6,     # Larger markers
-
-        # Improved legend
-        "legend.frameon": True,
-        "legend.framealpha": 0.9,
-        "legend.fancybox": True,
-        "legend.shadow": True,
-        "legend.facecolor": "white",
-        "legend.edgecolor": "gray",
-        "legend.borderpad": 0.5,
-
-        # Better text rendering
-        "font.size": 12,           # Slightly smaller default font
-        "axes.titlesize": 14,      # Larger title
-        "axes.labelsize": 12,      # Consistent label size
-        "xtick.labelsize": 10,     # Smaller tick labels
-        "ytick.labelsize": 10,
-        "legend.fontsize": 10,
-    })
+    mpl.rcParams.update(
+        {
+            # Better default figure size for readability
+            "figure.figsize": [8, 6],
+            "figure.dpi": 100,
+            # Improved grid appearance
+            "grid.linewidth": 0.5,  # Thinner grid lines
+            "grid.alpha": 0.7,  # More subtle grid
+            "grid.linestyle": "--",  # Dashed instead of solid
+            # Better axes styling
+            "axes.linewidth": 1.2,  # Slightly thicker axis lines
+            "axes.spines.top": False,  # Remove top spine for cleaner look
+            "axes.spines.right": False,  # Remove right spine for cleaner look
+            "axes.labelpad": 8,  # More space for labels
+            # Improved tick styling
+            "xtick.major.size": 5,  # Larger tick marks
+            "ytick.major.size": 5,
+            "xtick.major.width": 1.2,  # Thicker tick marks
+            "ytick.major.width": 1.2,
+            "xtick.major.pad": 6,  # More padding for tick labels
+            "ytick.major.pad": 6,
+            "xtick.minor.visible": True,  # Show minor ticks
+            "ytick.minor.visible": True,
+            "xtick.minor.size": 3,
+            "ytick.minor.size": 3,
+            # Better line widths
+            "lines.linewidth": 2.0,  # Thicker lines for better visibility
+            "lines.markersize": 6,  # Larger markers
+            # Improved legend
+            "legend.frameon": True,
+            "legend.framealpha": 0.9,
+            "legend.fancybox": True,
+            "legend.shadow": True,
+            "legend.facecolor": "white",
+            "legend.edgecolor": "gray",
+            "legend.borderpad": 0.5,
+            # Better text rendering
+            "font.size": 12,  # Slightly smaller default font
+            "axes.titlesize": 14,  # Larger title
+            "axes.labelsize": 12,  # Consistent label size
+            "xtick.labelsize": 10,  # Smaller tick labels
+            "ytick.labelsize": 10,
+            "legend.fontsize": 10,
+        },
+    )
 
 
 def create_publication_ready_plot(
