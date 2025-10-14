@@ -6,3 +6,5 @@ fedmoe_plots/tests/**
 
 # Ignore matplotlib style files
 *.mplstyle
+
+*.parquet
