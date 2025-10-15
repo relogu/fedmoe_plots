@@ -7,7 +7,7 @@ from typing import Any
 
 
 @dataclass
-class ExperimentWallTime:
+class ExperimentWallTimeThroughput:
     """Estimates total wall-clock training time for LLM training.
 
     This model provides a framework for analyzing the efficiency of different
@@ -30,6 +30,9 @@ class ExperimentWallTime:
     worker_flops_per_second: float  # S: Theoretical peak FLOPS per worker.
     worker_mfu: float  # MFU: Model FLOPS Utilization, efficiency of GPUs in [0,1].
 
+    # (worker_empirical_throughput_tokens_per_sec moved below to satisfy dataclass
+    # field ordering: fields with defaults must come after fields without)
+
     # --- Communication Parameters ---
     equivalent_communication_steps: int  # Total number of communication rounds.
     p2p_network_latency: float  # l: Network latency per communication round (seconds).
@@ -37,6 +40,14 @@ class ExperimentWallTime:
     # --- Training Configuration ---
     precision: str  # Precision of model parameters (e.g., "fp16", "bf16", "fp32").
     overlap_factor: float = 0.0  # Communication-computation overlap factor in [0,1].
+
+    # --- Empirical measurement ---
+    # Empirical tokens-per-second measured on the target cluster when
+    # communication and computation were allowed to fully overlap. If
+    # provided, the model will prefer this measurement to estimate the
+    # base training wall-clock time. If None, the older FLOPs-based
+    # estimate is used as a fallback.
+    worker_empirical_throughput_tokens_per_sec: float | None = None
 
     def precision_to_bits(self) -> int:
         """Convert precision string to number of bits.
@@ -60,21 +71,36 @@ class ExperimentWallTime:
         raise ValueError(msg)
 
     def compute_time(self) -> float:
-        """Estimate the compute time for training (in seconds).
+        """Estimate the base training time (in seconds) using an empirical.
 
-        The formula is based on the total number of FLOPs required for training.
-        Total FLOPs are estimated as 6 * d * D, where:
-        - d is the number of model parameters.
-        - D is the total number of tokens in the dataset.
-        The factor of 6 is a common rule of thumb for training large language models,
-        accounting for both forward and backward passes.
+        throughput when available, otherwise fall back to a FLOPs-based
+        estimate.
+
+        Priority:
+        1. If `worker_empirical_throughput_tokens_per_sec` is provided, use
+           dataset_size / worker_empirical_throughput_tokens_per_sec. This
+           throughput is assumed to have been measured with full
+           communication-computation overlap.
+        2. Otherwise fall back to the original FLOPs-based estimate.
 
         Returns
         -------
         float
-            Estimated compute time in seconds.
+            Estimated base training time in seconds (does not include any
+            communication that cannot be overlapped).
 
         """
+        # Fast path: empirical measurement (tokens / sec) measured with full overlap
+        if self.worker_empirical_throughput_tokens_per_sec is not None:
+            if self.worker_empirical_throughput_tokens_per_sec <= 0:
+                return float("inf")
+            # The empirical throughput already captures compute + any
+            # communication that was hidden by compute when measured.
+            return self.dataset_size / (
+                self.worker_empirical_throughput_tokens_per_sec * self.n_workers
+            )
+
+        # Fallback: FLOPs-based estimate (legacy behavior)
         # Total FLOPs for training: C = 6 * d * D
         total_flops = 6 * self.n_model_parameters * self.dataset_size
 
@@ -151,60 +177,32 @@ class ExperimentWallTime:
         comm_time_per_round = self._communication_time_per_round(p2p_bandwidth_bps)
         total_comm_time = self.equivalent_communication_steps * comm_time_per_round
 
-        # Decompose total communication time into overlappable and non-overlappable.
+        # If an empirical throughput was provided it was measured with full
+        # communication-computation overlap. In that case `compute_time_val`
+        # represents the observed wall time for processing the dataset under
+        # full overlap; the only additional time to add is the fraction of
+        # communication that cannot be overlapped under the current
+        # `overlap_factor` setting.
+        if self.worker_empirical_throughput_tokens_per_sec is not None:
+            non_overlappable_comm_time = total_comm_time * (1 - self.overlap_factor)
+            return compute_time_val + non_overlappable_comm_time
+
+        # Legacy behavior (no empirical throughput): compute_time_val is a
+        # FLOPs-based compute-only estimate. We must account for both the
+        # non-overlappable communication and any overlappable communication
+        # that exceeds compute and therefore cannot be hidden.
         overlappable_comm_time = total_comm_time * self.overlap_factor
         non_overlappable_comm_time = total_comm_time * (1 - self.overlap_factor)
 
-        # The overlappable part can be hidden by computation.
-        # Calculate the part of overlappable communication that is not hidden.
+        # The overlappable part can be hidden by computation. Calculate the
+        # part of overlappable communication that is not hidden by compute.
         unhidden_overlappable_time = max(0, overlappable_comm_time - compute_time_val)
 
-        # Total wall-clock time includes compute time, non-overlappable communication,
-        # and the part of overlappable communication that couldn't be hidden.
         return (
             compute_time_val + non_overlappable_comm_time + unhidden_overlappable_time
         )
 
-    def effective_throughput(self, p2p_bandwidth_bps: float) -> float:
-        """Compute effective throughput in tokens per second.
-
-        Throughput is defined as the total number of tokens processed
-        (``dataset_size``) divided by the estimated wall-clock ``total_time``.
-
-        Edge cases handled:
-        - If ``dataset_size`` is 0 -> returns 0.0
-        - If ``total_time`` is infinite -> returns 0.0 (no progress)
-        - If ``total_time`` is 0 -> returns float('inf')
-
-        Parameters
-        ----------
-        p2p_bandwidth_bps : float
-            Effective peer-to-peer bandwidth in bits per second (passed to
-            ``total_time``).
-
-        Returns
-        -------
-        float
-            Estimated effective throughput in tokens/second.
-
-        """
-        if self.dataset_size == 0:
-            return 0.0
-
-        total = self.total_time(p2p_bandwidth_bps)
-
-        # If model indicates infinite time (e.g., zero workers or zero effective
-        # FLOPS/bandwidth), throughput is effectively zero.
-        if total == float("inf"):
-            return 0.0
-
-        # If total time is exactly zero (degenerate), report infinite throughput.
-        if total == 0:
-            return float("inf")
-
-        return self.dataset_size / total
-
-    def copy(self, **kwargs: Any) -> ExperimentWallTime:  # noqa: ANN401
+    def copy(self, **kwargs: Any) -> ExperimentWallTimeThroughput:  # noqa: ANN401
         """Create a copy of this instance with updated parameters.
 
         This method allows for creating a new instance of ExperimentWallTime
