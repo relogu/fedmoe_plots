@@ -10,6 +10,7 @@ from pathlib import Path
 import matplotlib as mpl
 import matplotlib.style as mplstyle
 import numpy as np
+import pandas as pd
 from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
 from matplotlib.colors import LinearSegmentedColormap
@@ -520,3 +521,238 @@ def enhance_plot_for_presentation(
         frame.set_facecolor("white")
         frame.set_edgecolor("gray")
         frame.set_alpha(0.9)
+
+
+def plot_expert_collapse_metrics(
+    agg_df: pd.DataFrame,
+    color_palette: list[str],
+    line_styles: list[tuple],
+) -> None:
+    """Plot expert collapse metrics showing router similarity and KL divergence.
+
+    Parameters
+    ----------
+    agg_df : pd.DataFrame
+        Aggregated DataFrame with expert collapse metrics.
+    color_palette : list[str]
+        List of colors for plotting.
+    line_styles : list[tuple]
+        List of line styles for plotting.
+
+    """
+    if agg_df.empty:
+        log.warning("Aggregated DataFrame is empty. Cannot create plots.")
+        return
+
+    # 1. Router Cosine Similarity vs. Initialization Multipliers
+    _, ax = plt.subplots(figsize=(12, 8))
+
+    e_multipliers = sorted(agg_df["e_std_multiplier"].unique())
+
+    for i, e_mul in enumerate(e_multipliers):
+        subset = agg_df[agg_df["e_std_multiplier"] == e_mul]
+        ax.errorbar(
+            subset["r_std_multiplier"],
+            subset["mean_off_diag"],
+            yerr=subset["std_off_diag"],
+            label=f"e_std_multiplier = {e_mul}",
+            marker="o",
+            capsize=5,
+            linestyle=line_styles[i % len(line_styles)],
+            color=color_palette[i % len(color_palette)],
+        )
+
+    ax.set_xlabel("Router Std Multiplier (r_std_multiplier)", fontsize=14)
+    ax.set_ylabel("Mean Off-Diagonal Cosine Similarity", fontsize=14)
+    ax.set_title("Router Similarity vs. Initialization Multipliers", fontsize=16)
+    ax.set_xscale("log")
+    ax.grid(visible=True, which="both", ls="--")
+    ax.legend()
+    plt.tight_layout()
+    plt.show()
+
+    # 2. Expert Selection KL Divergence vs. Initialization Multipliers
+    _, ax = plt.subplots(figsize=(12, 8))
+
+    for i, e_mul in enumerate(e_multipliers):
+        subset = agg_df[agg_df["e_std_multiplier"] == e_mul]
+        ax.errorbar(
+            subset["r_std_multiplier"],
+            subset["mean_kl_div"],
+            yerr=subset["std_kl_div"],
+            label=f"e_std_multiplier = {e_mul}",
+            marker="s",
+            capsize=5,
+            linestyle=line_styles[i % len(line_styles)],
+            color=color_palette[i % len(color_palette)],
+        )
+
+    ax.set_xlabel("Router Std Multiplier (r_std_multiplier)", fontsize=14)
+    ax.set_ylabel("Mean Expert Selection KL Divergence", fontsize=14)
+    ax.set_title("Expert Selection Imbalance (KL Div) vs. Initialization", fontsize=16)
+    ax.set_xscale("log")
+    ax.grid(visible=True, which="both", ls="--")
+    ax.legend()
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_expert_collapse_heatmaps(agg_df: pd.DataFrame) -> None:
+    """Plot heatmaps showing router similarity and KL divergence.
+
+    Parameters
+    ----------
+    agg_df : pd.DataFrame
+        Aggregated DataFrame with expert collapse metrics.
+
+    """
+    if agg_df.empty:
+        log.warning("Aggregated DataFrame is empty. Cannot create heatmaps.")
+        return
+
+    # Pivot data for heatmaps
+    pivot_sim = agg_df.pivot_table(
+        index="e_std_multiplier",
+        columns="r_std_multiplier",
+        values="mean_off_diag",
+    )
+    pivot_kl = agg_df.pivot_table(
+        index="e_std_multiplier",
+        columns="r_std_multiplier",
+        values="mean_kl_div",
+    )
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 8))
+
+    # Heatmap for Router Similarity
+    im1 = ax1.imshow(pivot_sim, cmap="viridis", interpolation="nearest")
+    ax1.set_title("Mean Off-Diagonal Cosine Similarity")
+    ax1.set_xlabel("r_std_multiplier")
+    ax1.set_ylabel("e_std_multiplier")
+    ax1.set_xticks(np.arange(len(pivot_sim.columns)))
+    ax1.set_yticks(np.arange(len(pivot_sim.index)))
+    ax1.set_xticklabels(pivot_sim.columns)
+    ax1.set_yticklabels(pivot_sim.index)
+    fig.colorbar(im1, ax=ax1)
+
+    # Annotate heatmap
+    for i in range(len(pivot_sim.index)):
+        for j in range(len(pivot_sim.columns)):
+            if not pd.isna(pivot_sim.iloc[i, j]):
+                ax1.text(
+                    j,
+                    i,
+                    f"{pivot_sim.iloc[i, j]:.3f}",
+                    ha="center",
+                    va="center",
+                    color="w",
+                )
+
+    # Heatmap for KL Divergence
+    im2 = ax2.imshow(pivot_kl, cmap="plasma", interpolation="nearest")
+    ax2.set_title("Mean Expert Selection KL Divergence")
+    ax2.set_xlabel("r_std_multiplier")
+    ax2.set_ylabel("e_std_multiplier")
+    ax2.set_xticks(np.arange(len(pivot_kl.columns)))
+    ax2.set_yticks(np.arange(len(pivot_kl.index)))
+    ax2.set_xticklabels(pivot_kl.columns)
+    ax2.set_yticklabels(pivot_kl.index)
+    fig.colorbar(im2, ax=ax2)
+
+    # Annotate heatmap
+    for i in range(len(pivot_kl.index)):
+        for j in range(len(pivot_kl.columns)):
+            if not pd.isna(pivot_kl.iloc[i, j]):
+                ax2.text(
+                    j,
+                    i,
+                    f"{pivot_kl.iloc[i, j]:.3f}",
+                    ha="center",
+                    va="center",
+                    color="w",
+                )
+
+    plt.suptitle("Router Similarity and Expert Imbalance Heatmaps", fontsize=18)
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_expert_score_statistics(
+    agg_df: pd.DataFrame,
+    color_palette: list[str],
+    line_styles: list[tuple],
+) -> None:
+    """Plot expert score statistics showing mean and std across configurations.
+
+    Parameters
+    ----------
+    agg_df : pd.DataFrame
+        Aggregated DataFrame with expert score statistics.
+    color_palette : list[str]
+        List of colors for plotting.
+    line_styles : list[tuple]
+        List of line styles for plotting.
+
+    """
+    if agg_df.empty:
+        log.warning("Aggregated DataFrame is empty. Cannot create score plots.")
+        return
+
+    # Check if score statistics are available
+    score_cols = [col for col in agg_df.columns if "score" in col]
+    if not score_cols:
+        log.warning("No expert score statistics found in aggregated data.")
+        return
+
+    _, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(16, 12))
+    axes = [ax1, ax2, ax3, ax4]
+    metrics = ["mean_score_mean", "mean_score_std", "mean_score_min", "mean_score_max"]
+    titles = [
+        "Expert Score Mean vs. Initialization",
+        "Expert Score Std vs. Initialization",
+        "Expert Score Min vs. Initialization",
+        "Expert Score Max vs. Initialization",
+    ]
+
+    e_multipliers = sorted(agg_df["e_std_multiplier"].unique())
+
+    for metric, ax, title in zip(metrics, axes, titles, strict=True):
+        if metric not in agg_df.columns:
+            ax.text(
+                0.5,
+                0.5,
+                f"Data not available\nfor {metric}",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+            )
+            ax.set_title(title)
+            continue
+
+        for i, e_mul in enumerate(e_multipliers):
+            subset = agg_df[agg_df["e_std_multiplier"] == e_mul]
+            std_col = metric.replace("mean_", "std_")
+            yerr = subset[std_col] if std_col in subset.columns else None
+
+            ax.errorbar(
+                subset["r_std_multiplier"],
+                subset[metric],
+                yerr=yerr,
+                label=f"e_std_multiplier = {e_mul}",
+                marker="o",
+                capsize=5,
+                linestyle=line_styles[i % len(line_styles)],
+                color=color_palette[i % len(color_palette)],
+            )
+
+        ax.set_xlabel("Router Std Multiplier (r_std_multiplier)")
+        ax.set_ylabel(metric.replace("_", " ").title())
+        ax.set_title(title)
+        ax.set_xscale("log")
+        ax.grid(visible=True, which="both", ls="--", alpha=0.3)
+        if ax == ax1:  # Only show legend on first subplot
+            ax.legend()
+
+    plt.suptitle("Expert Score Statistics vs. Initialization Parameters", fontsize=16)
+    plt.tight_layout()
+    plt.show()

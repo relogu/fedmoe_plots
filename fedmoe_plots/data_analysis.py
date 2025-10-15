@@ -4,6 +4,8 @@ import logging
 
 import numpy as np
 import pandas as pd
+import wandb
+from tqdm import tqdm
 
 log = logging.getLogger(__name__)
 
@@ -334,3 +336,163 @@ def get_n_gpus(
         raise ValueError(msg)
     # Return the closest integer to the mean of n_gpus
     return int(np.round(n_gpus.mean()))  # Convert to int for consistency
+
+
+def fetch_expert_collapse_runs(
+    wandb_project: str,
+    run_name_regex: str,
+    metrics_to_fetch: list[str],
+) -> pd.DataFrame:
+    """Fetch and process runs from WandB for expert collapse analysis.
+
+    Parameters
+    ----------
+    wandb_project : str
+        The WandB project path (e.g., "camlsys/photon").
+    run_name_regex : str
+        A regex to filter run display names.
+    metrics_to_fetch : list[str]
+        A list of metric keys to download from WandB.
+
+    Returns
+    -------
+    pd.DataFrame
+        A DataFrame containing the fetched data, with one row per run.
+
+    """
+    api = wandb.Api(timeout=100)
+    runs = api.runs(
+        path=wandb_project,
+        filters={"display_name": {"$regex": run_name_regex}},
+    )
+    log.info("Found %d runs matching the filter '%s'.", len(runs), run_name_regex)
+
+    results_list = []
+    for run in tqdm(runs, desc="Processing runs"):
+        try:
+            config = run.config
+            r_std_mul = (
+                config.get("llm_config", {})
+                .get("model", {})
+                .get("ffn_config", {})
+                .get("r_std_multiplier")
+            )
+            e_std_mul = (
+                config.get("llm_config", {})
+                .get("model", {})
+                .get("ffn_config", {})
+                .get("e_std_multiplier")
+            )
+            seed = config.get("seed")
+
+            if r_std_mul is None or e_std_mul is None or seed is None:
+                log.warning(
+                    "Could not extract hyperparameters for run %s. Skipping.",
+                    run.name,
+                )
+                continue
+
+            history = run.history(keys=metrics_to_fetch, pandas=True)
+
+            final_metrics = {}
+            for metric in metrics_to_fetch:
+                if metric in history.columns:
+                    last_value = (
+                        history[metric].dropna().iloc[-1]
+                        if not history[metric].dropna().empty
+                        else None
+                    )
+                    final_metrics[metric] = last_value
+                else:
+                    final_metrics[metric] = None
+
+            result_row = {
+                "run_name": run.name,
+                "run_id": run.id,
+                "r_std_multiplier": r_std_mul,
+                "e_std_multiplier": e_std_mul,
+                "seed": seed,
+                **final_metrics,
+            }
+            results_list.append(result_row)
+
+        except Exception:
+            log.exception("Error processing run %s", run.name)
+
+    if not results_list:
+        log.warning("No data was processed.")
+        return pd.DataFrame()
+
+    results_df = pd.DataFrame(results_list)
+    log.info("Successfully processed %d runs.", len(results_df))
+    return results_df
+
+
+def aggregate_expert_collapse_data(results_df: pd.DataFrame) -> pd.DataFrame:
+    """Aggregate expert collapse data by averaging across blocks and seeds.
+
+    Parameters
+    ----------
+    results_df : pd.DataFrame
+        The raw DataFrame from `fetch_expert_collapse_runs`.
+
+    Returns
+    -------
+    pd.DataFrame
+        An aggregated DataFrame with mean and std dev for key metrics.
+
+    """
+    if results_df.empty:
+        return pd.DataFrame()
+
+    # Calculate mean metrics across blocks
+    for metric_prefix in [
+        "expert_router/eval/cosine_sim/off_diag",
+        "expert_selection/eval/top-1/kl_vs_uniform",
+    ]:
+        cols = [
+            f"{metric_prefix.replace('top-1', f'block_{i}/top-1')}" for i in range(4)
+        ]
+        if "kl_vs_uniform" in metric_prefix:
+            cols = [
+                f"expert_selection/eval/block_{i}/top-1/kl_vs_uniform" for i in range(4)
+            ]
+        elif "off_diag" in metric_prefix:
+            cols = [
+                f"expert_router/eval/block_{i}/cosine_sim/off_diag_mean"
+                for i in range(4)
+            ]
+
+        base_name = metric_prefix.split("/")[-1]
+        if "off_diag" in base_name:
+            base_name = "off_diag_mean"
+        elif "kl_vs_uniform" in base_name:
+            base_name = "kl_vs_uniform"
+
+        results_df[f"avg_{base_name}"] = results_df[
+            [c for c in cols if c in results_df.columns]
+        ].mean(axis=1)
+
+    # Calculate mean expert score stats across blocks and experts
+    for stat in ["mean", "std", "min", "max"]:
+        score_cols = [
+            f"expert_selection/eval/scores_histogram/block_{b}/expert_{e}/{stat}"
+            for b in range(4)
+            for e in range(4)
+        ]
+        results_df[f"avg_score_{stat}"] = results_df[
+            [c for c in score_cols if c in results_df.columns]
+        ].mean(axis=1)
+
+    # Group by multipliers and aggregate
+    return results_df.groupby(["r_std_multiplier", "e_std_multiplier"]).agg(
+        mean_off_diag=("avg_off_diag_mean", "mean"),
+        std_off_diag=("avg_off_diag_mean", "std"),
+        mean_kl_div=("avg_kl_vs_uniform", "mean"),
+        std_kl_div=("avg_kl_vs_uniform", "std"),
+        mean_score_mean=("avg_score_mean", "mean"),
+        std_score_mean=("avg_score_mean", "std"),
+        mean_score_std=("avg_score_std", "mean"),
+        std_score_std=("avg_score_std", "std"),
+        run_count=("run_id", "count"),
+    ).reset_index()
